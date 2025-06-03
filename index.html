@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simple FPS Game with HUD</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #333; }
+    canvas { display: block; }
+    #instructions {
+      position: absolute;
+      top: 50%;
+      width: 100%;
+      text-align: center;
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">Click to play</div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+
+  <script>
+    // ======== Global Variables =======
+    let hudCanvas, hudCtx;
+    let stamina = 100, maxStamina = 100;
+    let staminaDrain = 20, staminaRegen = 10;
+    let currentWeapon = 0;
+    const weaponsData = [{ name: 'Pistol' }, { name: 'Shotgun' }, { name: 'Rifle' }];
+
+    let scene, camera, renderer;
+    let playerHeight = 1.8;
+    let velocity = new THREE.Vector3();
+    let controls = { forward: false, backward: false, left: false, right: false, jump: false, crouch: false };
+    let canJump = true;
+    let gravity = 30;
+    let jumpPower = 10;
+    let isSprinting = false;
+    let isCrouched = false;
+    let pitchObject, yawObject;
+
+    let prevTime = performance.now();
+
+    let gameOver = false;
+
+    // ======== Create HUD ========
+    function createHUD() {
+      hudCanvas = document.createElement('canvas');
+      hudCanvas.style.position = 'absolute';
+      hudCanvas.style.top = '0';
+      hudCanvas.style.left = '0';
+      hudCanvas.style.pointerEvents = 'none';
+      hudCanvas.width = window.innerWidth;
+      hudCanvas.height = window.innerHeight;
+      document.body.appendChild(hudCanvas);
+      hudCtx = hudCanvas.getContext('2d');
+    }
+
+    // ======== Draw HUD ========
+    function drawHUD() {
+      if (!hudCtx) return;
+
+      hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+      hudCtx.save();
+
+      // Draw Stamina Bar background
+      hudCtx.fillStyle = '#000';
+      hudCtx.fillRect(20, 20, 222, 32);
+
+      // Draw Stamina label
+      hudCtx.font = '22px Arial';
+      hudCtx.textAlign = 'left';
+      hudCtx.fillStyle = '#fff';
+      hudCtx.fillText('Stamina', 24, 44);
+
+      // Draw stamina bar fill
+      hudCtx.fillStyle = '#2ecc70';
+      hudCtx.fillRect(100, 26, (stamina / maxStamina) * 110, 17);
+
+      // Stroke stamina bar border
+      hudCtx.strokeStyle = '#fff';
+      hudCtx.strokeRect(100, 26, 110, 17);
+
+      // Draw weapon info
+      hudCtx.fillStyle = '#fff';
+      hudCtx.fillText('Weapon: ' + weaponsData[currentWeapon].name, 24, 68);
+
+      // Game Over message
+      if (gameOver) {
+        hudCtx.font = '48px Arial';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillStyle = '#be2222';
+        hudCtx.fillText('GAME OVER', hudCanvas.width / 2, hudCanvas.height / 2 - 30);
+        hudCtx.font = '28px Arial';
+        hudCtx.fillStyle = '#fff';
+        hudCtx.fillText('Press SPACE to Restart', hudCanvas.width / 2, hudCanvas.height / 2 + 20);
+      }
+
+      hudCtx.restore();
+    }
+
+    // ======== Window resize handler ========
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      if (hudCanvas) {
+        hudCanvas.width = window.innerWidth;
+        hudCanvas.height = window.innerHeight;
+      }
+    }
+
+    // ======== Initialize Three.js scene ========
+    function init() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Player is represented by a camera attached to yaw and pitch objects
+      yawObject = new THREE.Object3D();
+      pitchObject = new THREE.Object3D();
+      yawObject.position.y = playerHeight;
+      yawObject.add(pitchObject);
+      pitchObject.add(camera);
+      scene.add(yawObject);
+
+      // Add a simple floor
+      const floorGeometry = new THREE.PlaneGeometry(100, 100);
+      const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, side: THREE.DoubleSide });
+      const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+      floor.rotation.x = Math.PI / 2;
+      scene.add(floor);
+
+      // Add a cube as a simple "target" or "world object"
+      const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const cubeMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+      const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+      cube.position.set(5, 0.5, -5);
+      scene.add(cube);
+
+      createHUD();
+
+      window.addEventListener('resize', onWindowResize);
+
+      setupControls();
+    }
+
+    // ======== Setup input controls ========
+    function setupControls() {
+      const instructions = document.getElementById('instructions');
+
+      instructions.addEventListener('click', () => {
+        instructions.style.display = 'none';
+        document.body.requestPointerLock();
+      });
+
+      document.addEventListener('pointerlockchange', () => {
+        if (document.pointerLockElement === document.body) {
+          document.addEventListener('mousemove', onMouseMove, false);
+        } else {
+          document.removeEventListener('mousemove', onMouseMove, false);
+          instructions.style.display = '';
+        }
+      });
+
+      document.addEventListener('keydown', (event) => {
+        switch (event.code) {
+          case 'KeyW': controls.forward = true; break;
+          case 'KeyS': controls.backward = true; break;
+          case 'KeyA': controls.left = true; break;
+          case 'KeyD': controls.right = true; break;
+          case 'ShiftLeft': isSprinting = true; break;
+          case 'ControlLeft': controls.crouch = true; break;
+          case 'Space':
+            if (gameOver) {
+              restart();
+            } else if (canJump) {
+              velocity.y = jumpPower;
+              canJump = false;
+            }
+            break;
+          case 'Digit1': currentWeapon = 0; break;
+          case 'Digit2': currentWeapon = 1; break;
+          case 'Digit3': currentWeapon = 2; break;
+        }
+      });
+
+      document.addEventListener('keyup', (event) => {
+        switch (event.code) {
+          case 'KeyW': controls.forward = false; break;
+          case 'KeyS': controls.backward = false; break;
+          case 'KeyA': controls.left = false; break;
+          case 'KeyD': controls.right = false; break;
+          case 'ShiftLeft': isSprinting = false; break;
+          case 'ControlLeft': controls.crouch = false; break;
+        }
+      });
+    }
+
+    // ======== Mouse look ========
+    function onMouseMove(event) {
+      const movementX = event.movementX || 0;
+      const movementY = event.movementY || 0;
+
+      yawObject.rotation.y -= movementX * 0.002;
+      pitchObject.rotation.x -= movementY * 0.002;
+      pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+    }
+
+    // ======== Game loop and player update ========
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+
+      updatePlayer(delta);
+      drawHUD();
+
+      renderer.render(scene, camera);
+
+      prevTime = time;
+    }
+
+    // ======== Player movement and physics ========
+    function updatePlayer(dt) {
+      isCrouched = controls.crouch;
+
+      let speed = isCrouched ? 2 : (isSprinting && stamina > 0 ? 6 : 3.5);
+
+      let direction = new THREE.Vector3();
+
+      if (controls.forward) direction.z -= 1;
+      if (controls.backward) direction.z += 1;
+      if (controls.left) direction.x -= 1;
+      if (controls.right) direction.x += 1;
+
+      if (direction.length() > 0) direction.normalize();
+
+      // Calculate move direction relative to camera yaw
+      const moveDir = new THREE.Vector3(direction.x, 0, direction.z);
+      moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawObject.rotation.y);
+
+      if (isSprinting && moveDir.length() > 0 && !isCrouched) {
+        stamina -= staminaDrain * dt;
+        stamina = Math.max(0, stamina);
+      } else {
+        stamina += staminaRegen * dt;
+        stamina = Math.min(maxStamina, stamina);
+      }
+
+      velocity.x = moveDir.x * speed;
+      velocity.z = moveDir.z * speed;
+
+      // Gravity
+      velocity.y -= gravity * dt;
+
+      // Simple floor collision detection
+      let nextPos = yawObject.position.clone().addScaledVector(velocity, dt);
+
+      if (nextPos.y < playerHeight) {
+        velocity.y = 0;
+        canJump = true;
+        nextPos.y = playerHeight;
+      }
+
+      yawObject.position.copy(nextPos);
+    }
+
+    // ======== Restart game ========
+    function restart() {
+      stamina = maxStamina;
+      gameOver = false;
+      yawObject.position.set(0, playerHeight, 0);
+      velocity.set(0, 0, 0);
+    }
+
+    // ======== Start game ========
+    init();
+    animate();
+  </script>
+</body>
+</html>
