@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Simple FPS Game with HUD</title>
+  <title>Simple FPS Game with HUD and Weapons</title>
   <style>
     body { margin: 0; overflow: hidden; background: #333; }
     canvas { display: block; }
@@ -41,6 +41,8 @@
     let isSprinting = false;
     let isCrouched = false;
     let pitchObject, yawObject;
+
+    let weaponMeshes = []; // holds weapon models
 
     let prevTime = performance.now();
 
@@ -149,9 +151,58 @@
 
       createHUD();
 
+      createWeaponModels(); // Create and attach weapon models
+
       window.addEventListener('resize', onWindowResize);
 
       setupControls();
+    }
+
+    // ======== Create weapon models attached to camera ========
+    function createWeaponModels() {
+      // Pistol - small box
+      const pistolGeometry = new THREE.BoxGeometry(0.3, 0.15, 0.6);
+      const pistolMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+      const pistol = new THREE.Mesh(pistolGeometry, pistolMaterial);
+      pistol.position.set(0.4, -0.3, -0.8);
+
+      // Shotgun - bigger box
+      const shotgunGeometry = new THREE.BoxGeometry(0.5, 0.15, 1);
+      const shotgunMaterial = new THREE.MeshBasicMaterial({ color: 0x553311 });
+      const shotgun = new THREE.Mesh(shotgunGeometry, shotgunMaterial);
+      shotgun.position.set(0.5, -0.35, -1);
+
+      // Rifle - longer box with scope cylinder
+      const rifleGeometry = new THREE.BoxGeometry(0.7, 0.15, 1.3);
+      const rifleMaterial = new THREE.MeshBasicMaterial({ color: 0x335577 });
+      const rifle = new THREE.Mesh(rifleGeometry, rifleMaterial);
+      rifle.position.set(0.5, -0.3, -1.1);
+
+      // Scope for rifle
+      const scopeGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8);
+      const scopeMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
+      scope.rotation.z = Math.PI / 2;
+      scope.position.set(0, 0.1, -0.2);
+      rifle.add(scope);
+
+      weaponMeshes.push(pistol, shotgun, rifle);
+
+      // Attach all weapons to pitchObject so they move with camera
+      weaponMeshes.forEach(mesh => {
+        mesh.visible = false;
+        pitchObject.add(mesh);
+      });
+
+      // Show the current weapon
+      updateWeaponVisibility();
+    }
+
+    // ======== Update which weapon mesh is visible ========
+    function updateWeaponVisibility() {
+      weaponMeshes.forEach((mesh, index) => {
+        mesh.visible = (index === currentWeapon);
+      });
     }
 
     // ======== Setup input controls ========
@@ -188,9 +239,18 @@
               canJump = false;
             }
             break;
-          case 'Digit1': currentWeapon = 0; break;
-          case 'Digit2': currentWeapon = 1; break;
-          case 'Digit3': currentWeapon = 2; break;
+          case 'Digit1':
+            currentWeapon = 0;
+            updateWeaponVisibility();
+            break;
+          case 'Digit2':
+            currentWeapon = 1;
+            updateWeaponVisibility();
+            break;
+          case 'Digit3':
+            currentWeapon = 2;
+            updateWeaponVisibility();
+            break;
         }
       });
 
