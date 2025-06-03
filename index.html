@@ -231,25 +231,34 @@
       prevTime = time;
     }
 
-    // ======== Player movement and physics ========
+    // ======== Player movement and physics with smooth crouch ========
     function updatePlayer(dt) {
+      // Determine if crouching or not
       isCrouched = controls.crouch;
 
+      // Target player height for crouch or stand
+      const targetHeight = isCrouched ? playerHeight / 2 : playerHeight;
+
+      // Smoothly interpolate camera height (yawObject.position.y)
+      const lerpSpeed = 10;
+      yawObject.position.y += (targetHeight - yawObject.position.y) * lerpSpeed * dt;
+
+      // Adjust speed based on crouch and sprint
       let speed = isCrouched ? 2 : (isSprinting && stamina > 0 ? 6 : 3.5);
 
+      // Movement direction vector
       let direction = new THREE.Vector3();
-
       if (controls.forward) direction.z -= 1;
       if (controls.backward) direction.z += 1;
       if (controls.left) direction.x -= 1;
       if (controls.right) direction.x += 1;
-
       if (direction.length() > 0) direction.normalize();
 
       // Calculate move direction relative to camera yaw
       const moveDir = new THREE.Vector3(direction.x, 0, direction.z);
       moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawObject.rotation.y);
 
+      // Stamina drain/regeneration
       if (isSprinting && moveDir.length() > 0 && !isCrouched) {
         stamina -= staminaDrain * dt;
         stamina = Math.max(0, stamina);
@@ -258,19 +267,21 @@
         stamina = Math.min(maxStamina, stamina);
       }
 
+      // Apply horizontal velocity
       velocity.x = moveDir.x * speed;
       velocity.z = moveDir.z * speed;
 
-      // Gravity
+      // Apply gravity
       velocity.y -= gravity * dt;
 
-      // Simple floor collision detection
+      // Calculate next position
       let nextPos = yawObject.position.clone().addScaledVector(velocity, dt);
 
-      if (nextPos.y < playerHeight) {
+      // Floor collision for crouched or standing height
+      if (nextPos.y < targetHeight) {
         velocity.y = 0;
         canJump = true;
-        nextPos.y = playerHeight;
+        nextPos.y = targetHeight;
       }
 
       yawObject.position.copy(nextPos);
